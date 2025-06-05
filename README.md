@@ -1,136 +1,216 @@
-# Minimal FastAPI Project Base
+# Irish Bank Fraud Detection System
 
-A streamlined foundation for building Python web applications using FastAPI.
+A sophisticated real-time fraud detection system designed for Irish banking institutions, featuring machine learning-based risk assessment, real-time transaction monitoring, and comprehensive security controls.
 
-## Features
+## 🚀 Features
 
-- **FastAPI Core**: Leverages the high-performance FastAPI framework.
-- **Docker Support**: Production-ready containerization with a multi-stage Dockerfile.
-- **Fly.io Optimized**: Includes a `fly.toml` for easy deployment with auto-scaling and cost-saving measures.
-- **Health Monitoring**: Basic health check endpoint (`/health`) included.
-- **Environment Configuration**: Uses `.env` files for managing settings.
+- **Real-time Fraud Detection**: ML-powered transaction analysis with instant risk scoring
+- **Interactive Dashboard**: Professional banking UI with live monitoring capabilities
+- **Risk Assessment**: Multi-factor fraud scoring with customizable thresholds
+- **Alert Management**: Instant notifications for suspicious activities
+- **Compliance Ready**: GDPR and banking regulation compliant design
+- **Audit Trail**: Complete transaction and user activity logging
+- **Multi-user Support**: Role-based access for bank staff and analysts
 
-## Project Structure
+## 🛡️ Security Features
 
-```
-project_base/
-├── app/
-│   ├── __init__.py
-│   ├── api/            # API endpoints (e.g., FastAPI routers)
-│   │   └── __init__.py
-│   ├── core/           # Core configuration, settings, error handling, logging
-│   │   └── __init__.py
-│   ├── frontend/       # UI implementations (e.g., NiceGUI pages, ReactPy components, FastAPI routes)
-│   │   ├── __init__.py
-│   │   # ├── nicegui_app.py  # Example: NiceGUI implementation
-│   │   # ├── reactpy_app.py  # Example: ReactPy implementation
-│   │   # └── routes.py       # Example: FastAPI frontend routes
-│   ├── generated/      # AI-generated application code
-│   │   └── __init__.py
-│   ├── models/         # Data models & schemas (e.g., Pydantic, SQLAlchemy)
-│   │   └── __init__.py
-│   ├── services/       # Business logic & external API integrations
-│   │   └── __init__.py
-│   ├── static/         # Static assets (CSS, JS, images). ALL image files MUST be placed here or in subdirectories within static/. Do NOT create separate top-level image directories like 'pictures/'.
-│   ├── templates/      # HTML templates (Jinja2)
-│   └── main.py         # Defines FastAPI routes and application logic for the 'app' module
-├── .dockerignore         # Specifies intentionally untracked files for Docker
-├── .env                  # Environment variables (create this file based on .env.example if provided)
-├── Dockerfile            # Container configuration
-├── fly.toml              # fly.io deployment configuration
-├── main.py               # Application entry point (runs the Uvicorn server)
-├── README.md             # This file
-└── requirements.txt      # Python dependencies
-```
+- Enterprise-grade authentication and authorization
+- Encrypted data storage and transmission
+- Comprehensive audit logging
+- Role-based access control
+- Session management and timeout controls
 
-## Getting Started
+## 📊 Analytics & Reporting
+
+- Real-time transaction monitoring
+- Fraud pattern analysis
+- Risk trend visualization
+- Compliance reporting
+- Performance metrics dashboard
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.8+
-- Docker (optional, for containerized deployment)
-- Fly.io account and `flyctl` CLI (optional, for Fly.io deployment)
+- Python 3.10 or higher
+- Git
 
 ### Installation
 
-1.  **Clone the repository (if applicable)**
-2.  **Create and activate a virtual environment:**
-    ```bash
-    python -m venv venv
-    # On Windows
-    # venv\Scripts\activate
-    # On macOS/Linux
-    # source venv/bin/activate
-    ```
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Create a `.env` file** in the `project_base` directory (you can copy `.env.example` if one exists and modify it). At a minimum, it might look like this if you want to change the default port:
-    ```env
-    PORT=8000
-    HOST=0.0.0.0
-    ```
-    If no `.env` file is present, the application will use default values (e.g., port 8000).
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd irish-bank-fraud-detection
+   ```
 
-### Running the Application Locally
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-Execute the main application script:
+3. **Configure environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+4. **Run the application**
+   ```bash
+   python main.py
+   ```
+
+5. **Access the system**
+   - Open your browser to `http://localhost:8000`
+   - Default admin credentials: admin@irishbank.ie / admin123
+
+## 🐳 Docker Deployment
+
+### Local Docker
 
 ```bash
-python main.py
+# Build the image
+docker build -t irish-bank-fraud-detection .
+
+# Run the container
+docker run -p 8000:8000 irish-bank-fraud-detection
 ```
-
-The application will typically be available at `http://0.0.0.0:8000` (or the port specified in your `.env` file).
-
-## API Endpoints
-
--   `GET /`: Returns a welcome message.
--   `GET /health`: Returns a health status, useful for monitoring.
-
-## Deployment
-
-### Docker Deployment
-
-1.  **Build the Docker image:**
-    ```bash
-    docker build -t my-fastapi-app .
-    ```
-2.  **Run the Docker container:**
-    ```bash
-    docker run -p 8000:8000 -d my-fastapi-app
-    ```
-    Replace `8000:8000` with `<host_port>:<container_port>` if you need to map to a different host port. The container port is determined by the `PORT` environment variable set in the `Dockerfile` or `fly.toml` (defaulting to 8000).
 
 ### Fly.io Deployment
 
-1.  **Install `flyctl`**: Follow the instructions at [fly.io/docs/hands-on/install-flyctl/](https://fly.io/docs/hands-on/install-flyctl/).
-2.  **Login to Fly.io**: `fly auth login`
-3.  **Launch the app (first time only)**:
-    ```bash
-    fly launch --name your-unique-app-name --region sin
-    ```
-    (Replace `your-unique-app-name` and `sin` (Singapore) with your desired app name and region. This will also create a `fly.toml` if one doesn't exist, or update the existing one.)
-4.  **Deploy changes**:
-    ```bash
-    fly deploy
-    ```
+```bash
+# Install Fly CLI
+curl -L https://fly.io/install.sh | sh
 
-The `fly.toml` file is pre-configured for auto-scaling and to stop machines when idle to save costs.
+# Deploy to Fly.io
+fly deploy
+```
 
-## Customization
+## 🏗️ Architecture
 
--   **Add new API endpoints**: Modify `project_base/app/main.py` to include new routes and logic.
--   **Modify dependencies**: Update `project_base/requirements.txt` and reinstall.
--   **Adjust Docker configuration**: Edit `project_base/Dockerfile`.
--   **Change deployment settings**: Update `project_base/fly.toml` for Fly.io.
+```
+├── app/                    # Main application
+│   ├── main.py            # UI pages and components
+│   ├── config.py          # Application configuration
+│   └── components/        # Reusable UI components
+├── api/                   # API endpoints
+├── core/                  # Core functionality
+│   ├── database.py        # Database connection
+│   ├── security.py        # Security utilities
+│   └── utils.py           # Utility functions
+├── models/                # Data models
+├── services/              # Business logic
+│   ├── fraud_detection.py # Fraud detection engine
+│   └── ml_models.py       # Machine learning models
+└── static/                # Static assets
+```
 
-## Core Principles for Development
+## 🔧 Configuration
 
-While this base is minimal, consider these principles as you expand your application:
+### Environment Variables
 
--   **Modularity**: Keep code organized into logical modules.
--   **Clarity**: Write clear, understandable code with type hints where appropriate.
--   **Testing**: Implement unit and integration tests for new features.
--   **Security**: Follow security best practices (input validation, authentication if needed, etc.).
--   **Documentation**: Keep this README and code comments up-to-date.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FRAUD_THRESHOLD` | Fraud detection threshold (0-1) | 0.7 |
+| `HIGH_RISK_THRESHOLD` | High risk alert threshold (0-1) | 0.9 |
+| `DATABASE_URL` | Database connection string | sqlite:///./fraud_detection.db |
+| `SECRET_KEY` | JWT secret key | Change in production |
+
+### Fraud Detection Parameters
+
+- **Transaction Amount Analysis**: Unusual spending patterns
+- **Velocity Checks**: Rapid successive transactions
+- **Geographic Analysis**: Location-based risk assessment
+- **Behavioral Patterns**: User behavior deviation detection
+- **Merchant Category**: High-risk merchant identification
+
+## 📈 Monitoring & Alerts
+
+### Real-time Monitoring
+
+- Transaction volume and velocity
+- Fraud detection accuracy metrics
+- System performance indicators
+- User activity patterns
+
+### Alert Types
+
+- **High Risk Transactions**: Score > 0.9
+- **Suspicious Patterns**: Unusual behavior detected
+- **System Alerts**: Performance or security issues
+- **Compliance Alerts**: Regulatory requirement violations
+
+## 🔒 Security Considerations
+
+### Data Protection
+
+- All sensitive data encrypted at rest and in transit
+- PCI DSS compliance considerations
+- GDPR data handling compliance
+- Regular security audits and penetration testing
+
+### Access Control
+
+- Multi-factor authentication
+- Role-based permissions
+- Session timeout controls
+- IP whitelisting capabilities
+
+## 🧪 Testing
+
+```bash
+# Run unit tests
+python -m pytest tests/
+
+# Run with coverage
+python -m pytest tests/ --cov=app --cov-report=html
+```
+
+## 📝 API Documentation
+
+### Authentication Endpoints
+
+- `POST /api/auth/login` - User authentication
+- `POST /api/auth/logout` - User logout
+- `GET /api/auth/me` - Current user info
+
+### Fraud Detection Endpoints
+
+- `POST /api/fraud/analyze` - Analyze transaction for fraud
+- `GET /api/fraud/alerts` - Get fraud alerts
+- `GET /api/fraud/statistics` - Fraud detection statistics
+
+### Monitoring Endpoints
+
+- `GET /health` - Health check
+- `GET /api/monitoring/metrics` - System metrics
+- `GET /api/monitoring/status` - System status
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For support and questions:
+- Email: support@irishbank.ie
+- Documentation: [Internal Wiki]
+- Emergency: +353-1-XXX-XXXX
+
+## 🔄 Version History
+
+- **v1.0.0** - Initial release with core fraud detection
+- Real-time monitoring dashboard
+- ML-based risk scoring
+- Enterprise security features
+
+---
+
+**Irish Bank Fraud Detection System** - Protecting Irish banking with advanced AI-powered fraud detection.
