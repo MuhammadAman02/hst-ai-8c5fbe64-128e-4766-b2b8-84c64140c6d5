@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import and run the application
-from app.main import main
-
 if __name__ == "__main__":
+    from app.main import main
     main()
