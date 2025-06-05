@@ -1,52 +1,32 @@
-# fly.toml file generated for Python FastAPI applications
-
-app = "hst-ai-709c416f-3a58-4499-addf-297255491bb9" # Updated app name
-primary_region = "sin" # Choose a region close to you or your users
-kill_signal = "SIGINT"
-kill_timeout = 5
+app = "irish-bank-fraud-detection"
+primary_region = "dub"
 
 [build]
-  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8000"
-  HOST = "0.0.0.0"
+  ENVIRONMENT = "production"
 
 [http_service]
-  internal_port = 8000 # Must match the port your app listens on inside the container
+  internal_port = 8000
   force_https = true
-  auto_stop_machines = true # Automatically stop machines when idle to save costs
-  auto_start_machines = true # Automatically start machines when requests come in
-  min_machines_running = 0 # Set to 0 to minimize costs
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
   processes = ["app"]
-  
-  # Advanced auto-scaling configuration
-  [http_service.concurrency]
-    type = "connections"
-    hard_limit = 1000
-    soft_limit = 800
 
-  # Auto-deletion settings for inactive machines
-  [[http_service.checks]]
-    grace_period = "30s"
-    interval = "15s"
-    method = "GET"
-    path = "/health"
-    protocol = "http"
-    timeout = "10s"
-    [http_service.checks.headers]
-      Host = "localhost"
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
 
-[[vm]]
+[vm]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 512 # Adjust based on your app's needs
-  
-  # Auto-shutdown configuration
-  [vm.shutdown]
-    # Shutdown after 60 minutes of inactivity
-    idle_timeout = "60m"
-    # Grace period before forced shutdown
-    grace_period = "30s"
+  memory_mb = 512
 
- 
+[[statics]]
+  guest_path = "/app/static"
+  url_prefix = "/static"
