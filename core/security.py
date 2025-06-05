@@ -1,96 +1,69 @@
 """
-Security utilities for authentication and authorization
+Irish Bank Fraud Detection System
+Security utilities and authentication
 """
+import hashlib
+import secrets
+import jwt
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 from passlib.context import CryptContext
-from jose import JWTError, jwt
-from app.config import settings
+from models.schemas import User, UserLogin
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    """Generate password hash"""
-    return pwd_context.hash(password)
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token"""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+class SecurityService:
+    """Security service for authentication and authorization"""
     
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
-
-
-def verify_token(token: str) -> Optional[dict]:
-    """Verify JWT token"""
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload
-    except JWTError:
-        return None
-
-
-def get_current_user(token: str) -> Optional[dict]:
-    """Get current user from token"""
-    payload = verify_token(token)
-    if payload is None:
-        return None
+    def __init__(self):
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        self.secret_key = secrets.token_urlsafe(32)
+        self.algorithm = "HS256"
+        self.access_token_expire_minutes = 30
     
-    email: str = payload.get("sub")
-    if email is None:
-        return None
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Verify a password against its hash"""
+        return self.pwd_context.verify(plain_password, hashed_password)
     
-    # In production, fetch user from database
-    return {"email": email}
-
-
-class SecurityHeaders:
-    """Security headers for web responses"""
+    def get_password_hash(self, password: str) -> str:
+        """Hash a password"""
+        return self.pwd_context.hash(password)
     
-    @staticmethod
-    def get_security_headers() -> dict:
-        """Get security headers"""
-        return {
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-            "X-XSS-Protection": "1; mode=block",
-            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-            "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-            "Referrer-Policy": "strict-origin-when-cross-origin"
+    def create_access_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+        """Create a JWT access token"""
+        to_encode = data.copy()
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+        
+        to_encode.update({"exp": expire})
+        encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return encoded_jwt
+    
+    def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Verify and decode a JWT token"""
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            return payload
+        except jwt.PyJWTError:
+            return None
+    
+    def authenticate_user(self, email: str, password: str) -> Optional[User]:
+        """Authenticate a user (demo implementation)"""
+        # Demo users
+        demo_users = {
+            "admin@irishbank.ie": {
+                "password_hash": self.get_password_hash("admin123"),
+                "user": User(
+                    id="admin_001",
+                    email="admin@irishbank.ie",
+                    full_name="System Administrator",
+                    role="admin",
+                    created_at=datetime.now()
+                )
+            }
         }
-
-
-def validate_input(data: str, max_length: int = 1000) -> str:
-    """Validate and sanitize input data"""
-    if not data:
-        return ""
-    
-    # Basic sanitization
-    sanitized = data.strip()[:max_length]
-    
-    # Remove potentially dangerous characters
-    dangerous_chars = ["<", ">", "&", "\"", "'", "/"]
-    for char in dangerous_chars:
-        sanitized = sanitized.replace(char, "")
-    
-    return sanitized
-
-
-def check_rate_limit(user_id: str, action: str, limit: int = 100, window: int = 3600) -> bool:
-    """Check rate limiting for user actions"""
-    # In production, implement with Redis or similar
-    # For now, always allow
-    return True
+        
+        user_data = demo_users.get(email)
+        if user_data and self.verify_password(password, user_data["password_hash"]):
+            return user_data["user"]
+        return None
