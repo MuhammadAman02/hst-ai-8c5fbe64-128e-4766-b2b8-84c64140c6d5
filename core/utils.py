@@ -1,186 +1,161 @@
 """
-Utility functions
+Irish Bank Fraud Detection System
+Utility functions and helpers
 """
-import hashlib
-import secrets
+import random
 import string
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-import json
-import logging
+from datetime import datetime, timedelta
+from typing import List
+import numpy as np
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+from models.schemas import Transaction, Merchant, Card, Location, TransactionStatus, RiskLevel
 
 def generate_transaction_id() -> str:
-    """Generate unique transaction ID"""
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    random_suffix = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
-    return f"TXN{timestamp}{random_suffix}"
+    """Generate a unique transaction ID"""
+    return f"TXN_{''.join(random.choices(string.ascii_uppercase + string.digits, k=12))}"
 
-
-def calculate_hash(data: str) -> str:
-    """Calculate SHA-256 hash of data"""
-    return hashlib.sha256(data.encode()).hexdigest()
-
+def generate_sample_data(count: int = 100) -> List[Transaction]:
+    """Generate sample transaction data for demonstration"""
+    transactions = []
+    
+    # Sample merchants
+    merchants = [
+        {"name": "SuperValu Dublin", "category": "grocery", "risk": 0.1, "country": "IRL"},
+        {"name": "Tesco Express", "category": "grocery", "risk": 0.1, "country": "IRL"},
+        {"name": "Amazon EU", "category": "online", "risk": 0.3, "country": "LUX"},
+        {"name": "PayPal Transfer", "category": "transfer", "risk": 0.4, "country": "USA"},
+        {"name": "Crypto Exchange", "category": "crypto", "risk": 0.8, "country": "MLT"},
+        {"name": "Shell Petrol", "category": "fuel", "risk": 0.1, "country": "IRL"},
+        {"name": "Starbucks", "category": "restaurant", "risk": 0.1, "country": "IRL"},
+        {"name": "Unknown Merchant", "category": "unknown", "risk": 0.9, "country": "RUS"},
+        {"name": "Dunnes Stores", "category": "retail", "risk": 0.1, "country": "IRL"},
+        {"name": "Penneys", "category": "clothing", "risk": 0.1, "country": "IRL"}
+    ]
+    
+    # Sample card types
+    card_types = ["Visa", "Mastercard", "American Express"]
+    
+    # Sample countries
+    countries = ["IRL", "GBR", "USA", "DEU", "FRA", "ESP", "ITA", "RUS", "CHN", "BRA"]
+    
+    for i in range(count):
+        merchant_data = random.choice(merchants)
+        
+        # Generate transaction
+        transaction = Transaction(
+            id=generate_transaction_id(),
+            user_id=f"USER_{random.randint(1000, 9999)}",
+            amount=round(random.lognormal(4, 1.5), 2),  # Log-normal distribution for realistic amounts
+            currency="EUR",
+            timestamp=datetime.now() - timedelta(
+                minutes=random.randint(1, 10080)  # Last week
+            ),
+            merchant=Merchant(
+                id=f"MERCH_{random.randint(100, 999)}",
+                name=merchant_data["name"],
+                category=merchant_data["category"],
+                risk_score=merchant_data["risk"],
+                country=merchant_data["country"]
+            ),
+            card=Card(
+                last4=f"{random.randint(1000, 9999)}",
+                type=random.choice(card_types),
+                issuer="Irish Bank",
+                country="IRL"
+            ),
+            location=Location(
+                country=random.choice(countries),
+                city=f"City_{random.randint(1, 100)}",
+                latitude=random.uniform(51.0, 55.0),  # Ireland-ish coordinates
+                longitude=random.uniform(-10.0, -6.0),
+                ip_address=f"{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
+            ),
+            status=random.choice(list(TransactionStatus)),
+            description=f"Payment to {merchant_data['name']}"
+        )
+        
+        # Calculate risk score based on various factors
+        risk_score = 0.0
+        
+        # Amount risk
+        if transaction.amount > 1000:
+            risk_score += 0.3
+        elif transaction.amount > 500:
+            risk_score += 0.1
+        
+        # Merchant risk
+        risk_score += merchant_data["risk"] * 0.4
+        
+        # Time risk (late night/early morning)
+        hour = transaction.timestamp.hour
+        if hour < 6 or hour > 23:
+            risk_score += 0.2
+        
+        # Location risk (non-Irish transactions)
+        if transaction.location.country != "IRL":
+            risk_score += 0.3
+        
+        # Add some randomness
+        risk_score += random.uniform(-0.1, 0.1)
+        risk_score = max(0.0, min(1.0, risk_score))
+        
+        transaction.risk_score = risk_score
+        
+        # Determine risk level
+        if risk_score >= 0.7:
+            transaction.risk_level = RiskLevel.HIGH
+        elif risk_score >= 0.4:
+            transaction.risk_level = RiskLevel.MEDIUM
+        else:
+            transaction.risk_level = RiskLevel.LOW
+        
+        # Simulate fraud labels (10% fraud rate)
+        transaction.is_fraud = risk_score > 0.8 and random.random() < 0.3
+        
+        transactions.append(transaction)
+    
+    # Sort by timestamp (newest first)
+    transactions.sort(key=lambda x: x.timestamp, reverse=True)
+    
+    return transactions
 
 def format_currency(amount: float, currency: str = "EUR") -> str:
     """Format currency amount"""
     if currency == "EUR":
         return f"€{amount:,.2f}"
     else:
-        return f"{currency} {amount:,.2f}"
+        return f"{amount:,.2f} {currency}"
 
+def calculate_risk_color(risk_score: float) -> str:
+    """Get color based on risk score"""
+    if risk_score >= 0.7:
+        return "red"
+    elif risk_score >= 0.4:
+        return "orange"
+    else:
+        return "green"
+
+def sanitize_input(text: str) -> str:
+    """Sanitize user input to prevent XSS"""
+    if not text:
+        return ""
+    
+    # Basic HTML escaping
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    text = text.replace('"', "&quot;")
+    text = text.replace("'", "&#x27;")
+    
+    return text
 
 def validate_email(email: str) -> bool:
-    """Basic email validation"""
+    """Validate email format"""
     import re
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
+    return bool(re.match(pattern, email))
 
-
-def sanitize_filename(filename: str) -> str:
-    """Sanitize filename for safe storage"""
-    import re
-    # Remove or replace unsafe characters
-    sanitized = re.sub(r'[^\w\-_\.]', '_', filename)
-    return sanitized[:255]  # Limit length
-
-
-def get_client_ip(request) -> str:
-    """Get client IP address from request"""
-    # Check for forwarded IP first (behind proxy)
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
-    
-    # Check for real IP
-    real_ip = request.headers.get('X-Real-IP')
-    if real_ip:
-        return real_ip
-    
-    # Fallback to remote address
-    return getattr(request.client, 'host', 'unknown')
-
-
-def mask_sensitive_data(data: str, mask_char: str = "*", visible_chars: int = 4) -> str:
-    """Mask sensitive data (e.g., credit card numbers)"""
-    if len(data) <= visible_chars:
-        return mask_char * len(data)
-    
-    return mask_char * (len(data) - visible_chars) + data[-visible_chars:]
-
-
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculate distance between two coordinates in kilometers"""
-    import math
-    
-    # Convert latitude and longitude from degrees to radians
-    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    
-    # Haversine formula
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-    c = 2 * math.asin(math.sqrt(a))
-    
-    # Radius of earth in kilometers
-    r = 6371
-    
-    return c * r
-
-
-def is_business_hours(dt: datetime = None) -> bool:
-    """Check if given datetime is within business hours (9 AM - 5 PM, Mon-Fri)"""
-    if dt is None:
-        dt = datetime.now()
-    
-    # Check if weekday (Monday = 0, Sunday = 6)
-    if dt.weekday() >= 5:  # Saturday or Sunday
-        return False
-    
-    # Check if within business hours
-    return 9 <= dt.hour < 17
-
-
-def format_duration(seconds: int) -> str:
-    """Format duration in seconds to human readable format"""
-    if seconds < 60:
-        return f"{seconds}s"
-    elif seconds < 3600:
-        minutes = seconds // 60
-        return f"{minutes}m {seconds % 60}s"
-    else:
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        return f"{hours}h {minutes}m"
-
-
-def safe_json_loads(json_str: str, default: Any = None) -> Any:
-    """Safely load JSON string with fallback"""
-    try:
-        return json.loads(json_str)
-    except (json.JSONDecodeError, TypeError):
-        logger.warning(f"Failed to parse JSON: {json_str}")
-        return default
-
-
-def chunk_list(lst: List[Any], chunk_size: int) -> List[List[Any]]:
-    """Split list into chunks of specified size"""
-    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
-
-
-def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
-    """Decorator to retry function on failure"""
-    import time
-    import functools
-    
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_exception = e
-                    if attempt < max_retries:
-                        logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s...")
-                        time.sleep(delay)
-                    else:
-                        logger.error(f"All {max_retries + 1} attempts failed")
-            
-            raise last_exception
-        
-        return wrapper
-    return decorator
-
-
-class Timer:
-    """Context manager for timing operations"""
-    
-    def __init__(self, description: str = "Operation"):
-        self.description = description
-        self.start_time = None
-        self.end_time = None
-    
-    def __enter__(self):
-        self.start_time = datetime.now()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.end_time = datetime.now()
-        duration = (self.end_time - self.start_time).total_seconds()
-        logger.info(f"{self.description} completed in {duration:.2f}s")
-    
-    @property
-    def elapsed(self) -> float:
-        """Get elapsed time in seconds"""
-        if self.start_time is None:
-            return 0.0
-        
-        end = self.end_time or datetime.now()
-        return (end - self.start_time).total_seconds()
+def generate_secure_token(length: int = 32) -> str:
+    """Generate a secure random token"""
+    import secrets
+    return secrets.token_urlsafe(length)
