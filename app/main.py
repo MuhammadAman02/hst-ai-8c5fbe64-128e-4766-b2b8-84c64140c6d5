@@ -1,403 +1,410 @@
 """
 Irish Bank Fraud Detection System
-Main application with NiceGUI interface
+Main application UI and routing
 """
 import asyncio
+import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from nicegui import ui, app as nicegui_app
-import os
+from typing import List, Dict, Optional
+import numpy as np
 
-from app.config import settings
-from core.database import init_db, get_db_session
-from core.security import get_current_user, create_access_token, verify_password
+from nicegui import ui, app
 from services.fraud_detection import FraudDetectionService
-from services.ml_models import MLModelService
-from models.schemas import Transaction, User, FraudAlert
-from app.components.monitoring import MonitoringDashboard
-from app.components.auth import AuthComponent
+from models.schemas import (
+    Transaction, FraudAlert, User, UserLogin, SystemMetrics,
+    Merchant, Card, Location, TransactionStatus, RiskLevel, AlertStatus
+)
+from core.security import SecurityService
+from core.utils import generate_sample_data
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class FraudDetectionApp:
-    """Main fraud detection application"""
+# Global services
+fraud_service = FraudDetectionService()
+security_service = SecurityService()
+
+# Global state
+current_user: Optional[User] = None
+sample_transactions: List[Transaction] = []
+sample_alerts: List[FraudAlert] = []
+system_metrics: Optional[SystemMetrics] = None
+
+# UI Theme
+IRISH_BANK_THEME = {
+    'primary': '#1a365d',      # Deep blue
+    'secondary': '#2d3748',    # Dark gray
+    'success': '#38a169',      # Green
+    'warning': '#d69e2e',      # Orange
+    'danger': '#e53e3e',       # Red
+    'info': '#3182ce',         # Blue
+    'light': '#f7fafc',        # Light gray
+    'dark': '#1a202c'          # Very dark gray
+}
+
+async def initialize_data():
+    """Initialize sample data for demonstration"""
+    global sample_transactions, sample_alerts, system_metrics
     
-    def __init__(self):
-        self.fraud_service = FraudDetectionService()
-        self.ml_service = MLModelService()
-        self.monitoring = MonitoringDashboard()
-        self.auth = AuthComponent()
-        self.current_user: Optional[User] = None
-        self.is_authenticated = False
+    try:
+        # Generate sample transactions
+        sample_transactions = generate_sample_data(100)
         
-        # Initialize database
-        init_db()
+        # Generate sample alerts
+        sample_alerts = []
+        for i, transaction in enumerate(sample_transactions[:10]):
+            if transaction.risk_score and transaction.risk_score > 0.6:
+                alert = FraudAlert(
+                    id=f"ALERT_{i+1:03d}",
+                    transaction_id=transaction.id,
+                    alert_type="HIGH_RISK_TRANSACTION",
+                    severity=RiskLevel.HIGH if transaction.risk_score > 0.8 else RiskLevel.MEDIUM,
+                    status=AlertStatus.ACTIVE,
+                    created_at=datetime.now() - timedelta(minutes=np.random.randint(1, 60)),
+                    title=f"High Risk Transaction - €{transaction.amount:.2f}",
+                    description=f"Suspicious transaction to {transaction.merchant.name}",
+                    risk_score=transaction.risk_score,
+                    triggered_rules=["High Amount", "Unusual Time", "Location Risk"]
+                )
+                sample_alerts.append(alert)
         
-        # Setup UI theme
-        self.setup_theme()
+        # Get system metrics
+        system_metrics = await fraud_service.get_system_metrics()
         
-    def setup_theme(self):
-        """Setup professional banking theme"""
-        ui.add_head_html("""
-        <style>
-            :root {
-                --primary-color: #1a365d;
-                --secondary-color: #2d3748;
-                --accent-color: #3182ce;
-                --success-color: #38a169;
-                --warning-color: #d69e2e;
-                --danger-color: #e53e3e;
-                --background-color: #f7fafc;
-                --card-background: #ffffff;
-                --text-primary: #2d3748;
-                --text-secondary: #4a5568;
-                --border-color: #e2e8f0;
-            }
-            
-            .fraud-header {
-                background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-                color: white;
-                padding: 1rem;
-                border-radius: 8px;
-                margin-bottom: 1rem;
-            }
-            
-            .risk-card {
-                border-left: 4px solid var(--warning-color);
-                background: var(--card-background);
-                padding: 1rem;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .alert-card {
-                border-left: 4px solid var(--danger-color);
-                background: var(--card-background);
-                padding: 1rem;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                animation: pulse 2s infinite;
-            }
-            
-            .metric-card {
-                background: var(--card-background);
-                padding: 1.5rem;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                text-align: center;
-                border-top: 3px solid var(--accent-color);
-            }
-            
-            .transaction-row {
-                padding: 0.5rem;
-                border-bottom: 1px solid var(--border-color);
-                transition: background-color 0.2s;
-            }
-            
-            .transaction-row:hover {
-                background-color: #f8f9fa;
-            }
-            
-            .high-risk {
-                background-color: #fed7d7 !important;
-            }
-            
-            .medium-risk {
-                background-color: #fef5e7 !important;
-            }
-            
-            .low-risk {
-                background-color: #f0fff4 !important;
-            }
-            
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.7; }
-                100% { opacity: 1; }
-            }
-            
-            .status-indicator {
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                display: inline-block;
-                margin-right: 8px;
-            }
-            
-            .status-online { background-color: var(--success-color); }
-            .status-warning { background-color: var(--warning-color); }
-            .status-offline { background-color: var(--danger-color); }
-        </style>
-        """)
+        logger.info(f"Initialized {len(sample_transactions)} transactions and {len(sample_alerts)} alerts")
+        
+    except Exception as e:
+        logger.error(f"Error initializing data: {e}")
 
-    async def login_page(self):
-        """Login page for authentication"""
-        with ui.card().classes('w-96 mx-auto mt-20'):
-            ui.html('<div class="fraud-header"><h2>🏦 Irish Bank Fraud Detection</h2><p>Secure Access Portal</p></div>')
+def create_header():
+    """Create the application header"""
+    with ui.header().classes('bg-blue-900 text-white shadow-lg'):
+        with ui.row().classes('w-full items-center justify-between px-4'):
+            with ui.row().classes('items-center'):
+                ui.icon('security', size='2rem').classes('mr-2')
+                ui.label('Irish Bank Fraud Detection').classes('text-xl font-bold')
             
-            with ui.column().classes('w-full gap-4'):
+            with ui.row().classes('items-center gap-4'):
+                if current_user:
+                    ui.label(f'Welcome, {current_user.full_name}').classes('text-sm')
+                    ui.button('Logout', on_click=logout).props('flat').classes('text-white')
+                
+                # System status indicator
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon('circle', size='sm').classes('text-green-400')
+                    ui.label('System Online').classes('text-sm')
+
+def create_sidebar():
+    """Create the navigation sidebar"""
+    with ui.left_drawer().classes('bg-gray-100'):
+        with ui.column().classes('w-full p-4 gap-2'):
+            ui.label('Navigation').classes('text-lg font-bold text-gray-700 mb-4')
+            
+            ui.button('Dashboard', on_click=lambda: ui.navigate.to('/dashboard')).props('flat').classes('w-full justify-start')
+            ui.button('Transactions', on_click=lambda: ui.navigate.to('/transactions')).props('flat').classes('w-full justify-start')
+            ui.button('Alerts', on_click=lambda: ui.navigate.to('/alerts')).props('flat').classes('w-full justify-start')
+            ui.button('Analytics', on_click=lambda: ui.navigate.to('/analytics')).props('flat').classes('w-full justify-start')
+            ui.button('Settings', on_click=lambda: ui.navigate.to('/settings')).props('flat').classes('w-full justify-start')
+
+def create_metric_card(title: str, value: str, icon: str, color: str = 'blue'):
+    """Create a metric display card"""
+    with ui.card().classes(f'p-4 bg-{color}-50 border-l-4 border-{color}-500'):
+        with ui.row().classes('items-center justify-between w-full'):
+            with ui.column().classes('gap-1'):
+                ui.label(title).classes(f'text-{color}-600 text-sm font-medium')
+                ui.label(value).classes('text-2xl font-bold text-gray-900')
+            ui.icon(icon, size='2rem').classes(f'text-{color}-500')
+
+def create_transaction_table(transactions: List[Transaction]):
+    """Create a transaction table"""
+    columns = [
+        {'name': 'id', 'label': 'Transaction ID', 'field': 'id', 'align': 'left'},
+        {'name': 'amount', 'label': 'Amount', 'field': 'amount', 'align': 'right'},
+        {'name': 'merchant', 'label': 'Merchant', 'field': 'merchant', 'align': 'left'},
+        {'name': 'risk_score', 'label': 'Risk Score', 'field': 'risk_score', 'align': 'center'},
+        {'name': 'status', 'label': 'Status', 'field': 'status', 'align': 'center'},
+        {'name': 'timestamp', 'label': 'Time', 'field': 'timestamp', 'align': 'left'},
+    ]
+    
+    rows = []
+    for transaction in transactions[:20]:  # Show latest 20
+        risk_color = 'red' if (transaction.risk_score or 0) > 0.7 else 'orange' if (transaction.risk_score or 0) > 0.4 else 'green'
+        rows.append({
+            'id': transaction.id[:12] + '...',
+            'amount': f'€{transaction.amount:.2f}',
+            'merchant': transaction.merchant.name,
+            'risk_score': f'{(transaction.risk_score or 0):.2f}',
+            'status': transaction.status.value,
+            'timestamp': transaction.timestamp.strftime('%H:%M:%S'),
+            'risk_color': risk_color
+        })
+    
+    with ui.card().classes('w-full'):
+        ui.label('Recent Transactions').classes('text-lg font-bold mb-4')
+        
+        table = ui.table(columns=columns, rows=rows).classes('w-full')
+        table.add_slot('body-cell-risk_score', '''
+            <q-td :props="props">
+                <q-badge :color="props.row.risk_color" :label="props.value" />
+            </q-td>
+        ''')
+
+def create_alert_list(alerts: List[FraudAlert]):
+    """Create an alert list"""
+    with ui.card().classes('w-full'):
+        ui.label('Active Fraud Alerts').classes('text-lg font-bold mb-4')
+        
+        if not alerts:
+            ui.label('No active alerts').classes('text-gray-500 text-center p-4')
+            return
+        
+        for alert in alerts[:10]:  # Show latest 10
+            severity_color = {
+                RiskLevel.CRITICAL: 'red',
+                RiskLevel.HIGH: 'orange',
+                RiskLevel.MEDIUM: 'yellow',
+                RiskLevel.LOW: 'green'
+            }.get(alert.severity, 'gray')
+            
+            with ui.card().classes(f'mb-2 border-l-4 border-{severity_color}-500'):
+                with ui.row().classes('items-center justify-between w-full p-2'):
+                    with ui.column().classes('gap-1 flex-grow'):
+                        ui.label(alert.title).classes('font-medium')
+                        ui.label(alert.description).classes('text-sm text-gray-600')
+                        ui.label(f'Risk Score: {alert.risk_score:.2f}').classes('text-xs text-gray-500')
+                    
+                    with ui.column().classes('gap-1 items-end'):
+                        ui.badge(alert.severity.value.upper()).props(f'color={severity_color}')
+                        ui.label(alert.created_at.strftime('%H:%M')).classes('text-xs text-gray-500')
+                        
+                        with ui.row().classes('gap-1'):
+                            ui.button('Investigate', size='sm').props('dense flat')
+                            ui.button('Block', size='sm').props('dense flat color=red')
+
+async def logout():
+    """Handle user logout"""
+    global current_user
+    current_user = None
+    ui.navigate.to('/login')
+
+@ui.page('/login')
+async def login_page():
+    """Login page"""
+    ui.add_head_html('<title>Irish Bank Fraud Detection - Login</title>')
+    
+    with ui.column().classes('items-center justify-center min-h-screen bg-gray-100'):
+        with ui.card().classes('p-8 max-w-md w-full'):
+            with ui.column().classes('items-center gap-4 w-full'):
+                ui.icon('security', size='3rem').classes('text-blue-900')
+                ui.label('Irish Bank Fraud Detection').classes('text-xl font-bold text-center')
+                ui.label('Secure Login').classes('text-gray-600 text-center')
+                
                 email_input = ui.input('Email', placeholder='admin@irishbank.ie').classes('w-full')
-                password_input = ui.input('Password', password=True, placeholder='Enter password').classes('w-full')
+                password_input = ui.input('Password', password=True, placeholder='admin123').classes('w-full')
                 
                 async def handle_login():
+                    global current_user
                     try:
-                        # Simulate authentication (in production, verify against database)
+                        # Simulate authentication
                         if email_input.value == 'admin@irishbank.ie' and password_input.value == 'admin123':
-                            self.current_user = User(
-                                id=1,
+                            current_user = User(
+                                id='admin_001',
                                 email=email_input.value,
-                                full_name="Bank Administrator",
-                                role="admin",
-                                is_active=True
+                                full_name='System Administrator',
+                                role='admin',
+                                created_at=datetime.now()
                             )
-                            self.is_authenticated = True
+                            ui.notify('Login successful!', type='positive')
                             ui.navigate.to('/dashboard')
                         else:
-                            ui.notification('Invalid credentials', type='negative')
+                            ui.notify('Invalid credentials', type='negative')
                     except Exception as e:
-                        ui.notification(f'Login error: {str(e)}', type='negative')
+                        logger.error(f"Login error: {e}")
+                        ui.notify('Login failed', type='negative')
                 
-                ui.button('Login', on_click=handle_login).classes('w-full bg-blue-600 text-white')
+                ui.button('Login', on_click=handle_login).classes('w-full bg-blue-900 text-white')
                 
                 ui.separator()
                 ui.label('Demo Credentials:').classes('text-sm text-gray-600')
                 ui.label('Email: admin@irishbank.ie').classes('text-xs text-gray-500')
                 ui.label('Password: admin123').classes('text-xs text-gray-500')
 
-    async def dashboard_page(self):
-        """Main fraud detection dashboard"""
-        if not self.is_authenticated:
-            ui.navigate.to('/login')
-            return
-            
-        # Header
-        with ui.row().classes('w-full items-center justify-between mb-4'):
-            ui.html('<div class="fraud-header flex-1"><h1>🛡️ Fraud Detection Dashboard</h1><p>Real-time monitoring and analysis</p></div>')
-            
-            with ui.row().classes('items-center gap-4'):
-                ui.label(f'Welcome, {self.current_user.full_name}').classes('text-sm')
-                ui.button('Logout', on_click=lambda: ui.navigate.to('/login')).classes('bg-red-500 text-white')
+@ui.page('/dashboard')
+async def dashboard_page():
+    """Main dashboard page"""
+    if not current_user:
+        ui.navigate.to('/login')
+        return
+    
+    ui.add_head_html('<title>Dashboard - Irish Bank Fraud Detection</title>')
+    
+    create_header()
+    create_sidebar()
+    
+    with ui.column().classes('p-6 gap-6'):
+        ui.label('Fraud Detection Dashboard').classes('text-2xl font-bold text-gray-900')
         
-        # Key Metrics Row
-        with ui.row().classes('w-full gap-4 mb-6'):
-            await self.create_metric_cards()
+        # Metrics row
+        if system_metrics:
+            with ui.row().classes('gap-4 w-full'):
+                create_metric_card('Total Transactions', f'{system_metrics.total_transactions:,}', 'receipt', 'blue')
+                create_metric_card('Fraud Detected', f'{system_metrics.fraud_detected}', 'warning', 'red')
+                create_metric_card('Active Alerts', f'{system_metrics.active_alerts}', 'notifications', 'orange')
+                create_metric_card('Model Accuracy', f'{system_metrics.model_accuracy:.1%}', 'analytics', 'green')
         
-        # Main Content Grid
-        with ui.row().classes('w-full gap-6'):
-            # Left Column - Real-time Monitoring
+        # Charts and tables row
+        with ui.row().classes('gap-6 w-full'):
             with ui.column().classes('flex-1'):
-                await self.create_real_time_monitoring()
-                await self.create_recent_transactions()
+                create_transaction_table(sample_transactions)
             
-            # Right Column - Alerts and Analysis
             with ui.column().classes('flex-1'):
-                await self.create_fraud_alerts()
-                await self.create_risk_analysis()
+                create_alert_list(sample_alerts)
 
-    async def create_metric_cards(self):
-        """Create key performance metric cards"""
-        metrics = await self.fraud_service.get_daily_metrics()
+@ui.page('/transactions')
+async def transactions_page():
+    """Transactions monitoring page"""
+    if not current_user:
+        ui.navigate.to('/login')
+        return
+    
+    ui.add_head_html('<title>Transactions - Irish Bank Fraud Detection</title>')
+    
+    create_header()
+    create_sidebar()
+    
+    with ui.column().classes('p-6 gap-6'):
+        ui.label('Transaction Monitoring').classes('text-2xl font-bold text-gray-900')
         
-        with ui.card().classes('metric-card'):
-            ui.label('Transactions Today').classes('text-sm text-gray-600')
-            ui.label(f'{metrics.get("transactions_today", 1247):,}').classes('text-2xl font-bold text-blue-600')
-            ui.label('+12% from yesterday').classes('text-xs text-green-600')
+        # Filters
+        with ui.card().classes('p-4 w-full'):
+            with ui.row().classes('gap-4 items-end'):
+                ui.input('Search Transaction ID').classes('flex-1')
+                ui.select(['All', 'High Risk', 'Medium Risk', 'Low Risk'], value='All', label='Risk Level').classes('w-48')
+                ui.select(['All', 'Pending', 'Approved', 'Declined', 'Blocked'], value='All', label='Status').classes('w-48')
+                ui.button('Filter', icon='filter_list').props('color=primary')
         
-        with ui.card().classes('metric-card'):
-            ui.label('Fraud Detected').classes('text-sm text-gray-600')
-            ui.label(f'{metrics.get("fraud_detected", 23)}').classes('text-2xl font-bold text-red-600')
-            ui.label('0.18% fraud rate').classes('text-xs text-gray-500')
+        # Transaction table
+        create_transaction_table(sample_transactions)
+
+@ui.page('/alerts')
+async def alerts_page():
+    """Fraud alerts page"""
+    if not current_user:
+        ui.navigate.to('/login')
+        return
+    
+    ui.add_head_html('<title>Alerts - Irish Bank Fraud Detection</title>')
+    
+    create_header()
+    create_sidebar()
+    
+    with ui.column().classes('p-6 gap-6'):
+        ui.label('Fraud Alerts Management').classes('text-2xl font-bold text-gray-900')
         
-        with ui.card().classes('metric-card'):
-            ui.label('Amount Blocked').classes('text-sm text-gray-600')
-            ui.label(f'€{metrics.get("amount_blocked", 45670):,}').classes('text-2xl font-bold text-orange-600')
-            ui.label('Potential losses prevented').classes('text-xs text-gray-500')
+        # Alert filters
+        with ui.card().classes('p-4 w-full'):
+            with ui.row().classes('gap-4 items-end'):
+                ui.select(['All', 'Active', 'Investigating', 'Resolved'], value='Active', label='Status').classes('w-48')
+                ui.select(['All', 'Critical', 'High', 'Medium', 'Low'], value='All', label='Severity').classes('w-48')
+                ui.button('Refresh', icon='refresh').props('color=primary')
         
-        with ui.card().classes('metric-card'):
-            ui.label('System Status').classes('text-sm text-gray-600')
-            with ui.row().classes('items-center'):
-                ui.html('<span class="status-indicator status-online"></span>')
-                ui.label('Online').classes('text-lg font-bold text-green-600')
+        # Alert list
+        create_alert_list(sample_alerts)
 
-    async def create_real_time_monitoring(self):
-        """Create real-time transaction monitoring chart"""
-        with ui.card().classes('w-full'):
-            ui.label('Real-time Transaction Monitoring').classes('text-lg font-bold mb-4')
+@ui.page('/analytics')
+async def analytics_page():
+    """Analytics and reporting page"""
+    if not current_user:
+        ui.navigate.to('/login')
+        return
+    
+    ui.add_head_html('<title>Analytics - Irish Bank Fraud Detection</title>')
+    
+    create_header()
+    create_sidebar()
+    
+    with ui.column().classes('p-6 gap-6'):
+        ui.label('Fraud Analytics & Reports').classes('text-2xl font-bold text-gray-900')
+        
+        with ui.row().classes('gap-6 w-full'):
+            # Model performance
+            with ui.card().classes('p-4 flex-1'):
+                ui.label('Model Performance').classes('text-lg font-bold mb-4')
+                ui.label('Accuracy: 95.2%').classes('text-green-600 font-medium')
+                ui.label('Precision: 94.8%').classes('text-blue-600 font-medium')
+                ui.label('Recall: 93.1%').classes('text-purple-600 font-medium')
+                ui.label('F1-Score: 93.9%').classes('text-orange-600 font-medium')
             
-            # Generate sample real-time data
-            df = await self.fraud_service.get_realtime_data()
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['transaction_count'],
-                mode='lines+markers',
-                name='Transactions/min',
-                line=dict(color='#3182ce', width=2)
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['fraud_score'],
-                mode='lines+markers',
-                name='Avg Risk Score',
-                yaxis='y2',
-                line=dict(color='#e53e3e', width=2)
-            ))
-            
-            fig.update_layout(
-                title='Transaction Volume & Risk Trends',
-                xaxis_title='Time',
-                yaxis_title='Transactions per Minute',
-                yaxis2=dict(
-                    title='Average Risk Score',
-                    overlaying='y',
-                    side='right'
-                ),
-                height=300,
-                showlegend=True
-            )
-            
-            ui.plotly(fig).classes('w-full')
+            # Fraud trends
+            with ui.card().classes('p-4 flex-1'):
+                ui.label('Fraud Trends (Last 30 Days)').classes('text-lg font-bold mb-4')
+                ui.label('Total Fraud Cases: 127').classes('text-red-600 font-medium')
+                ui.label('Amount Saved: €2.4M').classes('text-green-600 font-medium')
+                ui.label('False Positives: 8.2%').classes('text-yellow-600 font-medium')
+                ui.label('Response Time: 0.15s avg').classes('text-blue-600 font-medium')
 
-    async def create_recent_transactions(self):
-        """Create recent transactions table with risk scoring"""
-        with ui.card().classes('w-full mt-4'):
-            ui.label('Recent Transactions').classes('text-lg font-bold mb-4')
+@ui.page('/settings')
+async def settings_page():
+    """Settings and configuration page"""
+    if not current_user:
+        ui.navigate.to('/login')
+        return
+    
+    ui.add_head_html('<title>Settings - Irish Bank Fraud Detection</title>')
+    
+    create_header()
+    create_sidebar()
+    
+    with ui.column().classes('p-6 gap-6'):
+        ui.label('System Settings').classes('text-2xl font-bold text-gray-900')
+        
+        with ui.row().classes('gap-6 w-full'):
+            # Model settings
+            with ui.card().classes('p-4 flex-1'):
+                ui.label('Model Configuration').classes('text-lg font-bold mb-4')
+                ui.number('Risk Threshold', value=0.7, min=0, max=1, step=0.1).classes('w-full')
+                ui.number('Alert Threshold', value=0.8, min=0, max=1, step=0.1).classes('w-full')
+                ui.switch('Auto-block High Risk', value=True)
+                ui.switch('Real-time Monitoring', value=True)
+                ui.button('Save Settings').props('color=primary')
             
-            transactions = await self.fraud_service.get_recent_transactions()
-            
-            with ui.column().classes('w-full'):
-                for transaction in transactions:
-                    risk_class = self.get_risk_class(transaction['risk_score'])
-                    
-                    with ui.row().classes(f'transaction-row w-full {risk_class}'):
-                        with ui.column().classes('flex-1'):
-                            ui.label(f'€{transaction["amount"]:,.2f}').classes('font-bold')
-                            ui.label(f'{transaction["merchant"]}').classes('text-sm text-gray-600')
-                        
-                        with ui.column().classes('flex-1'):
-                            ui.label(f'Card: ****{transaction["card_last4"]}').classes('text-sm')
-                            ui.label(f'{transaction["location"]}').classes('text-sm text-gray-600')
-                        
-                        with ui.column().classes('text-right'):
-                            risk_score = transaction['risk_score']
-                            risk_color = 'red' if risk_score > 0.7 else 'orange' if risk_score > 0.4 else 'green'
-                            ui.label(f'Risk: {risk_score:.2f}').classes(f'font-bold text-{risk_color}-600')
-                            ui.label(f'{transaction["timestamp"]}').classes('text-xs text-gray-500')
-
-    async def create_fraud_alerts(self):
-        """Create fraud alerts panel"""
-        with ui.card().classes('w-full'):
-            ui.label('🚨 Active Fraud Alerts').classes('text-lg font-bold mb-4')
-            
-            alerts = await self.fraud_service.get_active_alerts()
-            
-            if not alerts:
-                ui.label('No active alerts').classes('text-gray-500 text-center py-8')
-            else:
-                for alert in alerts:
-                    with ui.card().classes('alert-card mb-2'):
-                        with ui.row().classes('w-full items-center justify-between'):
-                            with ui.column():
-                                ui.label(f'High Risk Transaction').classes('font-bold text-red-600')
-                                ui.label(f'Amount: €{alert["amount"]:,.2f}').classes('text-sm')
-                                ui.label(f'Card: ****{alert["card_last4"]}').classes('text-sm')
-                                ui.label(f'Risk Score: {alert["risk_score"]:.2f}').classes('text-sm font-bold')
-                            
-                            with ui.column().classes('text-right'):
-                                ui.button('Investigate', on_click=lambda a=alert: self.investigate_alert(a)).classes('bg-blue-600 text-white text-sm')
-                                ui.button('Block', on_click=lambda a=alert: self.block_transaction(a)).classes('bg-red-600 text-white text-sm')
-
-    async def create_risk_analysis(self):
-        """Create risk analysis charts"""
-        with ui.card().classes('w-full mt-4'):
-            ui.label('Risk Analysis').classes('text-lg font-bold mb-4')
-            
-            # Risk distribution pie chart
-            risk_data = await self.fraud_service.get_risk_distribution()
-            
-            fig = px.pie(
-                values=list(risk_data.values()),
-                names=list(risk_data.keys()),
-                title='Risk Distribution (Last 24h)',
-                color_discrete_map={
-                    'Low Risk': '#38a169',
-                    'Medium Risk': '#d69e2e',
-                    'High Risk': '#e53e3e'
-                }
-            )
-            fig.update_layout(height=300)
-            
-            ui.plotly(fig).classes('w-full')
-
-    def get_risk_class(self, risk_score: float) -> str:
-        """Get CSS class based on risk score"""
-        if risk_score > 0.7:
-            return 'high-risk'
-        elif risk_score > 0.4:
-            return 'medium-risk'
-        else:
-            return 'low-risk'
-
-    async def investigate_alert(self, alert: Dict):
-        """Handle alert investigation"""
-        ui.notification(f'Investigating transaction {alert["transaction_id"]}', type='info')
-        # In production, this would open detailed investigation view
-
-    async def block_transaction(self, alert: Dict):
-        """Handle transaction blocking"""
-        ui.notification(f'Transaction {alert["transaction_id"]} blocked', type='warning')
-        # In production, this would block the transaction and notify relevant parties
-
-    async def health_check(self):
-        """Health check endpoint"""
-        return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-
-# Global app instance
-fraud_app = FraudDetectionApp()
-
+            # System status
+            with ui.card().classes('p-4 flex-1'):
+                ui.label('System Status').classes('text-lg font-bold mb-4')
+                ui.label('Model Version: 1.0.0').classes('text-gray-600')
+                ui.label('Last Training: 2024-01-15').classes('text-gray-600')
+                ui.label('Database Status: Connected').classes('text-green-600')
+                ui.label('API Status: Online').classes('text-green-600')
+                ui.button('Retrain Model').props('color=orange')
 
 @ui.page('/')
 async def index():
     """Root page - redirect to dashboard or login"""
-    if fraud_app.is_authenticated:
+    if current_user:
         ui.navigate.to('/dashboard')
     else:
         ui.navigate.to('/login')
 
-
-@ui.page('/login')
-async def login():
-    """Login page"""
-    await fraud_app.login_page()
-
-
-@ui.page('/dashboard')
-async def dashboard():
-    """Main dashboard page"""
-    await fraud_app.dashboard_page()
-
-
-# Health check endpoint
-nicegui_app.add_route('/health', fraud_app.health_check)
-
-
 def main():
     """Main application entry point"""
-    ui.run(
-        host=settings.host,
-        port=settings.port,
-        title=settings.app_name,
-        favicon='🛡️',
-        dark=False,
-        show=False,
-        reload=settings.debug
-    )
+    try:
+        # Initialize data
+        asyncio.create_task(initialize_data())
+        
+        # Configure NiceGUI
+        ui.run(
+            title='Irish Bank Fraud Detection System',
+            port=int(os.environ.get('PORT', 8000)),
+            host='0.0.0.0',
+            reload=False,
+            show=False,
+            favicon='🏦'
+        )
+        
+    except Exception as e:
+        logger.error(f"Application startup failed: {e}")
+        raise
 
-
-if __name__ in {"__main__", "__mp_main__"}:
+if __name__ == "__main__":
     main()
