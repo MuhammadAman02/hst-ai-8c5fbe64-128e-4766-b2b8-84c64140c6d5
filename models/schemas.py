@@ -1,26 +1,27 @@
 """
+Irish Bank Fraud Detection System
 Pydantic models for data validation and serialization
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field, validator
 from enum import Enum
-
-
-class UserRole(str, Enum):
-    """User role enumeration"""
-    ADMIN = "admin"
-    ANALYST = "analyst"
-    VIEWER = "viewer"
-
+from pydantic import BaseModel, Field, validator
+from decimal import Decimal
 
 class TransactionStatus(str, Enum):
     """Transaction status enumeration"""
     PENDING = "pending"
     APPROVED = "approved"
+    DECLINED = "declined"
     BLOCKED = "blocked"
     INVESTIGATING = "investigating"
 
+class RiskLevel(str, Enum):
+    """Risk level enumeration"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 class AlertStatus(str, Enum):
     """Alert status enumeration"""
@@ -29,208 +30,189 @@ class AlertStatus(str, Enum):
     RESOLVED = "resolved"
     FALSE_POSITIVE = "false_positive"
 
+class UserRole(str, Enum):
+    """User role enumeration"""
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    INVESTIGATOR = "investigator"
+    VIEWER = "viewer"
 
-class User(BaseModel):
-    """User model"""
-    id: int
-    email: EmailStr
-    full_name: str
-    role: UserRole
-    is_active: bool = True
-    created_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+class Location(BaseModel):
+    """Geographic location model"""
+    country: str = Field(..., min_length=2, max_length=3)
+    city: Optional[str] = Field(None, max_length=100)
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    ip_address: Optional[str] = Field(None, pattern=r'^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$')
 
+class Merchant(BaseModel):
+    """Merchant information model"""
+    id: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=200)
+    category: str = Field(..., min_length=1, max_length=100)
+    risk_score: float = Field(0.0, ge=0.0, le=1.0)
+    country: str = Field(..., min_length=2, max_length=3)
 
-class UserCreate(BaseModel):
-    """User creation model"""
-    email: EmailStr
-    full_name: str
-    password: str = Field(..., min_length=8)
-    role: UserRole = UserRole.ANALYST
-    
-    @validator('password')
-    def validate_password(cls, v):
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
-        return v
-
-
-class UserLogin(BaseModel):
-    """User login model"""
-    email: EmailStr
-    password: str
-
+class Card(BaseModel):
+    """Card information model"""
+    last4: str = Field(..., pattern=r'^\d{4}$')
+    type: str = Field(..., min_length=1, max_length=20)
+    issuer: str = Field(..., min_length=1, max_length=50)
+    country: str = Field(..., min_length=2, max_length=3)
 
 class Transaction(BaseModel):
-    """Transaction model"""
-    id: Optional[int] = None
-    transaction_id: str
+    """Transaction model for fraud detection"""
+    id: str = Field(..., min_length=1, max_length=100)
+    user_id: str = Field(..., min_length=1, max_length=100)
     amount: float = Field(..., gt=0)
-    merchant: str
-    card_last4: str = Field(..., regex=r'^\d{4}$')
-    location: str
+    currency: str = Field("EUR", pattern=r'^[A-Z]{3}$')
     timestamp: datetime
-    risk_score: float = Field(..., ge=0.0, le=1.0)
-    is_fraud: bool = False
+    merchant: Merchant
+    card: Card
+    location: Location
     status: TransactionStatus = TransactionStatus.PENDING
+    description: Optional[str] = Field(None, max_length=500)
+    reference: Optional[str] = Field(None, max_length=100)
+    
+    # Risk assessment fields
+    risk_score: Optional[float] = Field(None, ge=0.0, le=1.0)
+    risk_level: Optional[RiskLevel] = None
+    risk_factors: Optional[List[str]] = []
+    
+    # Fraud detection metadata
+    is_fraud: Optional[bool] = None
+    fraud_probability: Optional[float] = Field(None, ge=0.0, le=1.0)
+    model_version: Optional[str] = None
     
     class Config:
-        from_attributes = True
-    
-    @validator('amount')
-    def validate_amount(cls, v):
-        if v <= 0:
-            raise ValueError('Amount must be positive')
-        if v > 1000000:  # 1 million limit
-            raise ValueError('Amount exceeds maximum limit')
-        return round(v, 2)
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
-
-class TransactionCreate(BaseModel):
-    """Transaction creation model"""
-    amount: float = Field(..., gt=0)
-    merchant: str
-    card_last4: str = Field(..., regex=r'^\d{4}$')
-    location: str
-    
-    @validator('merchant')
-    def validate_merchant(cls, v):
-        if len(v.strip()) < 2:
-            raise ValueError('Merchant name must be at least 2 characters')
-        return v.strip()
-
-
-class FraudAlert(BaseModel):
-    """Fraud alert model"""
-    id: Optional[int] = None
-    transaction_id: str
-    alert_type: str
-    risk_score: float = Field(..., ge=0.0, le=1.0)
-    description: str
-    status: AlertStatus = AlertStatus.ACTIVE
-    created_at: datetime
-    resolved_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
-
-
-class FraudAlertCreate(BaseModel):
-    """Fraud alert creation model"""
-    transaction_id: str
-    alert_type: str
-    risk_score: float = Field(..., ge=0.0, le=1.0)
-    description: str
-
+class RiskFactor(BaseModel):
+    """Individual risk factor model"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., min_length=1, max_length=500)
+    weight: float = Field(..., ge=0.0, le=1.0)
+    value: float = Field(..., ge=0.0, le=1.0)
+    threshold: float = Field(..., ge=0.0, le=1.0)
 
 class RiskAssessment(BaseModel):
     """Risk assessment model"""
-    transaction_id: str
-    risk_score: float = Field(..., ge=0.0, le=1.0)
-    risk_factors: List[str]
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    recommendation: str
+    transaction_id: str = Field(..., min_length=1, max_length=100)
+    overall_score: float = Field(..., ge=0.0, le=1.0)
+    risk_level: RiskLevel
+    factors: List[RiskFactor]
+    model_confidence: float = Field(..., ge=0.0, le=1.0)
+    assessment_time: datetime
+    model_version: str = Field(..., min_length=1, max_length=50)
     
-    @validator('risk_factors')
-    def validate_risk_factors(cls, v):
-        if not v:
-            raise ValueError('At least one risk factor must be provided')
-        return v
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
-
-class SystemMetrics(BaseModel):
-    """System metrics model"""
-    timestamp: datetime
-    transactions_today: int
-    fraud_detected: int
-    amount_blocked: float
-    system_status: str
-    cpu_usage: float = Field(..., ge=0.0, le=100.0)
-    memory_usage: float = Field(..., ge=0.0, le=100.0)
-    active_connections: int
-
-
-class FraudPattern(BaseModel):
-    """Fraud pattern model"""
-    pattern_id: str
-    pattern_type: str
-    description: str
-    risk_weight: float = Field(..., ge=0.0, le=1.0)
-    detection_count: int = 0
-    last_detected: Optional[datetime] = None
-
-
-class GeolocationData(BaseModel):
-    """Geolocation data model"""
-    latitude: float = Field(..., ge=-90.0, le=90.0)
-    longitude: float = Field(..., ge=-180.0, le=180.0)
-    city: str
-    country: str
-    ip_address: Optional[str] = None
-
+class FraudAlert(BaseModel):
+    """Fraud alert model"""
+    id: str = Field(..., min_length=1, max_length=100)
+    transaction_id: str = Field(..., min_length=1, max_length=100)
+    alert_type: str = Field(..., min_length=1, max_length=100)
+    severity: RiskLevel
+    status: AlertStatus = AlertStatus.ACTIVE
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    assigned_to: Optional[str] = Field(None, max_length=100)
+    resolution_notes: Optional[str] = Field(None, max_length=1000)
+    false_positive: bool = False
+    
+    # Alert details
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(..., min_length=1, max_length=1000)
+    risk_score: float = Field(..., ge=0.0, le=1.0)
+    triggered_rules: List[str] = []
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class TransactionAnalysis(BaseModel):
     """Transaction analysis result model"""
-    transaction_id: str
-    analysis_timestamp: datetime
+    transaction: Transaction
     risk_assessment: RiskAssessment
-    geolocation: Optional[GeolocationData] = None
-    velocity_check: Dict[str, Any]
-    pattern_matches: List[FraudPattern]
-    final_decision: str
-    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    alerts: List[FraudAlert] = []
+    recommendations: List[str] = []
+    processing_time_ms: float = Field(..., ge=0)
+    analysis_timestamp: datetime
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
+class User(BaseModel):
+    """User model for authentication"""
+    id: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    full_name: str = Field(..., min_length=1, max_length=200)
+    role: UserRole
+    is_active: bool = True
+    created_at: datetime
+    last_login: Optional[datetime] = None
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
-class AlertSummary(BaseModel):
-    """Alert summary model"""
-    total_alerts: int
-    active_alerts: int
-    resolved_alerts: int
-    false_positives: int
-    high_risk_alerts: int
-    medium_risk_alerts: int
-    low_risk_alerts: int
+class UserLogin(BaseModel):
+    """User login request model"""
+    email: str = Field(..., pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    password: str = Field(..., min_length=6, max_length=100)
 
+class SystemMetrics(BaseModel):
+    """System performance metrics model"""
+    timestamp: datetime
+    total_transactions: int = Field(..., ge=0)
+    fraud_detected: int = Field(..., ge=0)
+    false_positives: int = Field(..., ge=0)
+    active_alerts: int = Field(..., ge=0)
+    avg_processing_time_ms: float = Field(..., ge=0)
+    model_accuracy: float = Field(..., ge=0.0, le=1.0)
+    system_load: float = Field(..., ge=0.0, le=1.0)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
-class DashboardData(BaseModel):
-    """Dashboard data model"""
-    metrics: SystemMetrics
-    recent_transactions: List[Transaction]
-    active_alerts: List[FraudAlert]
-    alert_summary: AlertSummary
-    risk_distribution: Dict[str, int]
-
+class ModelPerformance(BaseModel):
+    """ML model performance metrics"""
+    model_name: str = Field(..., min_length=1, max_length=100)
+    version: str = Field(..., min_length=1, max_length=50)
+    accuracy: float = Field(..., ge=0.0, le=1.0)
+    precision: float = Field(..., ge=0.0, le=1.0)
+    recall: float = Field(..., ge=0.0, le=1.0)
+    f1_score: float = Field(..., ge=0.0, le=1.0)
+    auc_roc: float = Field(..., ge=0.0, le=1.0)
+    training_date: datetime
+    evaluation_date: datetime
+    sample_size: int = Field(..., ge=0)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 class APIResponse(BaseModel):
-    """Generic API response model"""
+    """Standard API response model"""
     success: bool
-    message: str
-    data: Optional[Any] = None
-    error_code: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class HealthCheck(BaseModel):
-    """Health check response model"""
-    status: str
-    timestamp: datetime
-    version: str
-    database_status: str
-    ml_model_status: str
-    external_services_status: Dict[str, str]
-
-
-# Token models
-class Token(BaseModel):
-    """JWT token model"""
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
-class TokenData(BaseModel):
-    """Token data model"""
-    email: Optional[str] = None
-    role: Optional[str] = None
+    message: str = Field(..., min_length=1, max_length=500)
+    data: Optional[Dict[str, Any]] = None
+    error_code: Optional[str] = Field(None, max_length=50)
+    timestamp: datetime = Field(default_factory=datetime.now)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
