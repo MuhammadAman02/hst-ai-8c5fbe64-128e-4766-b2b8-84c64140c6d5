@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Irish Bank Fraud Detection System{% endblock %}</title>
+    
+    <!-- Security Headers -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Main Content -->
+    <main id="main-content">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Notification Container -->
+    <div id="notification-container"></div>
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <span>Processing...</span>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="/static/js/app.js"></script>
+    {% block extra_scripts %}{% endblock %}
+    
+    <!-- Error Handling -->
+    <script>
+        window.addEventListener('error', function(e) {
+            console.error('JavaScript Error:', e.error);
+            
+            // Show user-friendly error message
+            if (window.fraudApp) {
+                window.fraudApp.showNotification(
+                    'An unexpected error occurred. Please refresh the page.',
+                    'error'
+                );
+            }
+        });
+        
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('Unhandled Promise Rejection:', e.reason);
+            
+            // Show user-friendly error message
+            if (window.fraudApp) {
+                window.fraudApp.showNotification(
+                    'A network error occurred. Please check your connection.',
+                    'error'
+                );
+            }
+        });
+    </script>
+</body>
+</html>
