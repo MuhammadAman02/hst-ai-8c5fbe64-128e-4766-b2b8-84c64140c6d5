@@ -1,3 +1,4 @@
 """
-Business logic services package
+Irish Bank Fraud Detection System
+Services package initialization
 """
