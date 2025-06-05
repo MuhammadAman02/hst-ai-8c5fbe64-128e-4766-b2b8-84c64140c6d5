@@ -1,3 +1,4 @@
 """
-Core functionality package
+Irish Bank Fraud Detection System
+Core package initialization
 """
